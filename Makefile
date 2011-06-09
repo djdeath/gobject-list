@@ -18,3 +18,15 @@ else
 endif
 	gcc -fPIC -rdynamic -g -c -Wall ${CFLAGS} ${BUILD_OPTIONS} $<
 	gcc -shared -Wl,-soname,$@ -o $@ gobject-list.o -lc -ldl ${LIBS}
+
+libglib-backtrace.so: glib-backtrace.c
+ifeq ($(HAVE_LIBUNWIND), 1)
+	@echo "Building with backtrace support (libunwind)"
+else
+	@echo "Building without backtrace support (libunwind disabled)"
+endif
+	gcc -fPIC -rdynamic -g -c -Wall ${CFLAGS} ${BUILD_OPTIONS} $<
+	gcc -shared -Wl,-soname,$@ -o $@ glib-backtrace.o -lc -ldl ${LIBS}
+
+all: libglib-backtrace.so libgobject-list.so
+	@echo "Done."
