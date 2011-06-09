@@ -60,6 +60,7 @@ DisplayFlagsMapItem display_flags_map[] =
 };
 
 static GHashTable *objects = NULL;
+static GHashTable *classes = NULL;
 
 static gboolean
 display_filter (DisplayFlags flags)
@@ -143,6 +144,7 @@ print_trace (void)
 
       g_print ("#%d  %s + [0x%08x]\n", stack_num++, name, (unsigned int)off);
     }
+#endif
 }
 
 static void
@@ -157,7 +159,27 @@ _dump_object_list (void)
       g_print (" - %p, %s: %u refs\n",
           obj, G_OBJECT_TYPE_NAME (obj), obj->ref_count);
     }
-#endif
+
+}
+
+static void
+_dump_classes_list (void)
+{
+  GHashTableIter iter;
+  const gchar *class_name;
+  gpointer class_instances;
+
+  g_hash_table_iter_init (&iter, classes);
+  while (g_hash_table_iter_next (&iter,
+                                 (gpointer) &class_name,
+                                 &class_instances))
+    {
+      guint nb = GPOINTER_TO_UINT (class_name);
+
+      if (nb > 0)
+        g_print (" - %s: %u instances\n",
+                 class_name, GPOINTER_TO_UINT (class_instances));
+    }
 }
 
 static void
@@ -166,6 +188,10 @@ _sig_usr1_handler (int signal)
   g_print ("Living Objects:\n");
 
   _dump_object_list ();
+
+  g_print ("Living Instances:\n");
+
+  _dump_classes_list ();
 }
 
 static void
@@ -174,6 +200,10 @@ _exiting (void)
   g_print ("\nStill Alive:\n");
 
   _dump_object_list ();
+
+  g_print ("Living Instances:\n");
+
+  _dump_classes_list ();
 }
 
 static void *
@@ -193,8 +223,9 @@ get_func (const char *func_name)
       /* set up signal handler */
       signal (SIGUSR1, _sig_usr1_handler);
 
-      /* set up objects map */
+      /* set up objects & classes map */
       objects = g_hash_table_new (NULL, NULL);
+      classes = g_hash_table_new (g_str_hash, g_str_equal);
 
       /* Set up exit handler */
       atexit (_exiting);
@@ -209,6 +240,26 @@ get_func (const char *func_name)
 }
 
 static void
+_class_inc_instance (const gchar *class_name)
+{
+  guint nb;
+
+  nb = GPOINTER_TO_UINT (g_hash_table_lookup ((gpointer) classes, class_name));
+  g_print ("%s %u\n", class_name, nb);
+  g_hash_table_insert (classes, (gpointer) class_name, GUINT_TO_POINTER (++nb));
+}
+static void
+_class_dec_instance (const gchar *class_name)
+{
+  guint nb;
+
+  nb = GPOINTER_TO_UINT (g_hash_table_lookup ((gpointer) classes, class_name));
+  if (nb > 0)
+    g_hash_table_insert (classes, (gpointer) class_name,
+                         GUINT_TO_POINTER (--nb));
+}
+
+static void
 _object_finalized (gpointer data,
     GObject *obj)
 {
@@ -219,6 +270,7 @@ _object_finalized (gpointer data,
     }
 
   g_hash_table_remove (objects, obj);
+  _class_dec_instance (G_OBJECT_TYPE_NAME (obj));
 }
 
 gpointer
@@ -251,6 +303,7 @@ g_object_new (GType type,
       g_object_weak_ref (obj, _object_finalized, NULL);
 
       g_hash_table_insert (objects, obj, GUINT_TO_POINTER (TRUE));
+      _class_inc_instance (G_OBJECT_TYPE_NAME (obj));
     }
 
   return obj;
