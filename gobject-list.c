@@ -62,6 +62,8 @@ DisplayFlagsMapItem display_flags_map[] =
 static GHashTable *objects = NULL;
 static GHashTable *classes = NULL;
 
+gpointer gobject_list_pointer_to_follow = NULL;
+
 static gboolean
 display_filter (DisplayFlags flags)
 {
@@ -245,7 +247,6 @@ _class_inc_instance (const gchar *class_name)
   guint nb;
 
   nb = GPOINTER_TO_UINT (g_hash_table_lookup ((gpointer) classes, class_name));
-  g_print ("%s %u\n", class_name, nb);
   g_hash_table_insert (classes, (gpointer) class_name, GUINT_TO_POINTER (++nb));
 }
 static void
@@ -278,12 +279,13 @@ g_object_new (GType type,
     const char *first,
     ...)
 {
-  gpointer (* real_g_object_new_valist) (GType, const char *, va_list);
+  static gpointer (* real_g_object_new_valist) (GType, const char *, va_list) = NULL;
   va_list var_args;
   GObject *obj;
   const char *obj_name;
 
-  real_g_object_new_valist = get_func ("g_object_new_valist");
+  if (G_UNLIKELY (!real_g_object_new_valist))
+    real_g_object_new_valist = get_func ("g_object_new_valist");
 
   va_start (var_args, first);
   obj = real_g_object_new_valist (type, first, var_args);
@@ -325,9 +327,69 @@ g_object_ref (gpointer object)
   ref_count = obj->ref_count;
   ret = real_g_object_ref (object);
 
-  if (object_filter (obj_name) && display_filter (DISPLAY_FLAG_REFS))
+  if (G_UNLIKELY (gobject_list_pointer_to_follow == object ||
+                  (object_filter (obj_name) &&
+                   display_filter (DISPLAY_FLAG_REFS))))
     {
       g_print (" +  Reffed object %p, %s; ref_count: %d -> %d\n",
+          obj, obj_name, ref_count, obj->ref_count);
+      print_trace();
+    }
+
+  return ret;
+}
+
+gpointer
+g_object_ref_sink (gpointer object)
+{
+  gpointer (* real_g_object_ref_sink) (gpointer);
+  GObject *obj = G_OBJECT (object);
+  const char *obj_name;
+  guint ref_count;
+  GObject *ret;
+
+  real_g_object_ref_sink = get_func ("g_object_ref_sink");
+
+  obj_name = G_OBJECT_TYPE_NAME (obj);
+
+  ref_count = obj->ref_count;
+  ret = real_g_object_ref_sink (object);
+
+  if (G_UNLIKELY (gobject_list_pointer_to_follow == object ||
+                  (object_filter (obj_name) &&
+                   display_filter (DISPLAY_FLAG_REFS))))
+    {
+      g_print (" +  Reffed(sink) object %p, %s; ref_count: %d -> %d\n",
+          obj, obj_name, ref_count, obj->ref_count);
+      print_trace();
+    }
+
+  return ret;
+}
+
+gpointer
+g_object_add_toggle_ref (gpointer      object,
+                         GToggleNotify notify,
+                         gpointer      data)
+{
+  gpointer (* real_g_object_add_toggle_ref) (gpointer);
+  GObject *obj = G_OBJECT (object);
+  const char *obj_name;
+  guint ref_count;
+  GObject *ret;
+
+  real_g_object_add_toggle_ref = get_func ("g_object_add_toggle_ref");
+
+  obj_name = G_OBJECT_TYPE_NAME (obj);
+
+  ref_count = obj->ref_count;
+  ret = real_g_object_ref_sink (object);
+
+  if (G_UNLIKELY (gobject_list_pointer_to_follow == object ||
+                  (object_filter (obj_name) &&
+                   display_filter (DISPLAY_FLAG_REFS))))
+    {
+      g_print (" +  Reffed(sink) object %p, %s; ref_count: %d -> %d\n",
           obj, obj_name, ref_count, obj->ref_count);
       print_trace();
     }
@@ -338,15 +400,18 @@ g_object_ref (gpointer object)
 void
 g_object_unref (gpointer object)
 {
-  void (* real_g_object_unref) (gpointer);
+  static void (* real_g_object_unref) (gpointer) = NULL;
   GObject *obj = G_OBJECT (object);
   const char *obj_name;
 
-  real_g_object_unref = get_func ("g_object_unref");
+  if (G_UNLIKELY (!real_g_object_unref))
+    real_g_object_unref = get_func ("g_object_unref");
 
   obj_name = G_OBJECT_TYPE_NAME (obj);
 
-  if (object_filter (obj_name) && display_filter (DISPLAY_FLAG_REFS))
+  if (G_UNLIKELY (gobject_list_pointer_to_follow == object ||
+                  (object_filter (obj_name) &&
+                   display_filter (DISPLAY_FLAG_REFS))))
     {
       g_print (" -  Unreffed object %p, %s; ref_count: %d -> %d\n",
           obj, obj_name, obj->ref_count, obj->ref_count - 1);
