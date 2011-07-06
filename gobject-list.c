@@ -274,22 +274,10 @@ _object_finalized (gpointer data,
   _class_dec_instance (G_OBJECT_TYPE_NAME (obj));
 }
 
-gpointer
-g_object_new (GType type,
-    const char *first,
-    ...)
+static void
+_object_created (GObject *obj)
 {
-  static gpointer (* real_g_object_new_valist) (GType, const char *, va_list) = NULL;
-  va_list var_args;
-  GObject *obj;
-  const char *obj_name;
-
-  if (G_UNLIKELY (!real_g_object_new_valist))
-    real_g_object_new_valist = get_func ("g_object_new_valist");
-
-  va_start (var_args, first);
-  obj = real_g_object_new_valist (type, first, var_args);
-  va_end (var_args);
+  const gchar *obj_name;
 
   obj_name = G_OBJECT_TYPE_NAME (obj);
 
@@ -307,6 +295,62 @@ g_object_new (GType type,
       g_hash_table_insert (objects, obj, GUINT_TO_POINTER (TRUE));
       _class_inc_instance (G_OBJECT_TYPE_NAME (obj));
     }
+}
+
+gpointer
+g_object_newv (GType       object_type,
+               guint       n_parameters,
+               GParameter *parameters)
+{
+  static GObject * (* real_g_object_newv) (GType, guint, GParameter *) = NULL;
+  GObject *obj;
+
+  if (G_UNLIKELY (!real_g_object_newv))
+    real_g_object_newv = get_func ("g_object_newv");
+
+  obj = real_g_object_newv (object_type, n_parameters, parameters);
+
+  _object_created (obj);
+
+  return obj;
+}
+
+
+GObject *
+g_object_new_valist (GType        object_type,
+                     const gchar *first_property_name,
+                     va_list      var_args)
+{
+  static GObject * (* real_g_object_new_valist) (GType, const char *, va_list) = NULL;
+  GObject *obj;
+
+  if (G_UNLIKELY (!real_g_object_new_valist))
+    real_g_object_new_valist = get_func ("g_object_new_valist");
+
+  obj = real_g_object_new_valist (object_type, first_property_name, var_args);
+
+  _object_created (obj);
+
+  return obj;
+}
+
+gpointer
+g_object_new (GType type,
+    const char *first,
+    ...)
+{
+  static gpointer (* real_g_object_new_valist) (GType, const char *, va_list) = NULL;
+  va_list var_args;
+  GObject *obj;
+
+  if (G_UNLIKELY (!real_g_object_new_valist))
+    real_g_object_new_valist = get_func ("g_object_new_valist");
+
+  va_start (var_args, first);
+  obj = real_g_object_new_valist (type, first, var_args);
+  va_end (var_args);
+
+  _object_created (obj);
 
   return obj;
 }
