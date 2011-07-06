@@ -367,23 +367,22 @@ g_object_ref_sink (gpointer object)
   return ret;
 }
 
-gpointer
-g_object_add_toggle_ref (gpointer      object,
-                         GToggleNotify notify,
-                         gpointer      data)
+void
+g_object_add_toggle_ref (GObject       *object,
+                         GToggleNotify  notify,
+                         gpointer       data)
 {
-  gpointer (* real_g_object_add_toggle_ref) (gpointer);
+  void (* real_g_object_add_toggle_ref) (GObject *, GToggleNotify, gpointer);
   GObject *obj = G_OBJECT (object);
   const char *obj_name;
   guint ref_count;
-  GObject *ret;
 
   real_g_object_add_toggle_ref = get_func ("g_object_add_toggle_ref");
 
   obj_name = G_OBJECT_TYPE_NAME (obj);
 
   ref_count = obj->ref_count;
-  ret = real_g_object_ref_sink (object);
+  real_g_object_add_toggle_ref (object, notify, data);
 
   if (G_UNLIKELY (gobject_list_pointer_to_follow == object ||
                   (object_filter (obj_name) &&
@@ -393,8 +392,6 @@ g_object_add_toggle_ref (gpointer      object,
           obj, obj_name, ref_count, obj->ref_count);
       print_trace();
     }
-
-  return ret;
 }
 
 void
